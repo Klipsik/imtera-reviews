@@ -1,0 +1,13 @@
+{
+  "name": "imtera-parser",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch server.mjs",
+    "start": "bun run server.mjs",
+    "test": "bun test lib/*.test.mjs"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "playwright": "^1.52.0"
+  }
+}

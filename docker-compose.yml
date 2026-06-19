@@ -1,0 +1,108 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: imtera
+      POSTGRES_USER: imtera
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imtera -d imtera"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  parser:
+    build:
+      context: ./services/parser
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+    shm_size: "1gb"
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+      PARSER_URL: http://parser:3001
+      REVERB_HOST: localhost
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      parser:
+        condition: service_started
+    restart: unless-stopped
+
+  queue:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.queue
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      QUEUE_CONNECTION: redis
+      PARSER_URL: http://parser:3001
+      REVERB_HOST: reverb
+      REVERB_PORT: 8080
+    command: php artisan queue:listen --tries=1 --timeout=0
+    depends_on:
+      app:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  reverb:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.queue
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      BROADCAST_CONNECTION: reverb
+      REVERB_HOST: 0.0.0.0
+      REVERB_PORT: 8080
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
