@@ -213,7 +213,20 @@ class ImportReviewsStreamJob implements ShouldBeUnique, ShouldQueue
 
     private function failImport(Organization $organization, string $message): void
     {
+        \Illuminate\Support\Facades\Log::error('Import failed', [
+            'organization_id' => $organization->id,
+            'message' => $message,
+        ]);
+
         $organization->update(['sync_status' => OrganizationSyncStatus::Failed->value]);
-        ImportFailed::dispatch($organization->fresh(), $message);
+
+        try {
+            ImportFailed::dispatch($organization->fresh(), $message);
+        } catch (Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('ImportFailed broadcast skipped', [
+                'organization_id' => $organization->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }
