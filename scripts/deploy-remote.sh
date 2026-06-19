@@ -43,8 +43,8 @@ sudo supervisorctl restart imtera-horizon imtera-reverb 2>/dev/null \
 
 sudo systemctl restart imtera-parser
 
-chown -R kp:www-data storage bootstrap/cache
-find storage bootstrap/cache -type d -exec chmod 2775 {} +
-find storage bootstrap/cache -type f -exec chmod 664 {} +
+sudo chown -R kp:www-data storage bootstrap/cache 2>/dev/null || true
+find storage bootstrap/cache -type d -exec chmod 2775 {} + 2>/dev/null || true
+find storage bootstrap/cache -type f -exec chmod 664 {} + 2>/dev/null || true
 
 echo "Deploy complete: $(grep APP_URL .env | head -1)"
