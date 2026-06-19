@@ -307,8 +307,12 @@ export function createReviewsNetworkCollector() {
         return true;
       }
 
-      if (this.totalPages != null && this.loadedPages.size >= this.totalPages) {
-        return target == null || this.reviews.length >= target;
+      if (
+        this.totalPages != null
+        && this.loadedPages.size >= this.totalPages
+        && (target == null || this.reviews.length >= target)
+      ) {
+        return true;
       }
 
       return false;

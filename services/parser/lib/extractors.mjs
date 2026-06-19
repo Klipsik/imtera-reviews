@@ -725,9 +725,17 @@ async function streamViaNetworkIntercept(page, collector, target, onBatch, onPro
       stagnantRounds++;
       if (stagnantRounds >= stagnantLimit) {
         await scrollReviewsContainer(page, { aggressive: true });
-        await waitForReviewsLoad(page, 2000);
+        await waitForReviewsLoad(page, target > 200 ? 3000 : 2000);
 
         if (collector.reviews.length === previousCount) {
+          if (target && collector.reviews.length < target) {
+            stagnantRounds = 0;
+            scrollAttempts++;
+            await scrollReviewsContainer(page, { aggressive: true });
+            await waitForReviewsLoad(page, 3500);
+            continue;
+          }
+
           await emitNew();
           break;
         }
@@ -743,7 +751,7 @@ async function streamViaNetworkIntercept(page, collector, target, onBatch, onPro
 
     previousCount = collector.reviews.length;
     await scrollReviewsContainer(page);
-    await waitForReviewsLoad(page, 1500);
+    await waitForReviewsLoad(page, target > 200 ? 2200 : 1500);
     scrollAttempts++;
   }
 
