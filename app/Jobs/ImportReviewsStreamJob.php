@@ -141,7 +141,16 @@ class ImportReviewsStreamJob implements ShouldBeUnique, ShouldQueue
                 return;
             }
 
-            $this->failImport($organization, $e->getMessage());
+            $totalSaved = Review::where('organization_id', $organization->id)->count();
+            $expectedCount = (int) $organization->reviews_count;
+
+            if ($expectedCount > 0 && $totalSaved >= $this->minimumSavedCount($expectedCount)) {
+                $this->completeImport($organization, $totalSaved, $expectedCount);
+
+                return;
+            }
+
+            $this->failImport($organization, $e->getMessage(), $totalSaved);
 
             return;
         }
@@ -153,40 +162,19 @@ class ImportReviewsStreamJob implements ShouldBeUnique, ShouldQueue
         }
 
         $expectedCount = (int) $organization->reviews_count;
+        $totalSaved = Review::where('organization_id', $organization->id)->count();
 
         if ($expectedCount > 0 && $totalSaved < $this->minimumSavedCount($expectedCount)) {
             $this->failImport(
                 $organization,
                 sprintf('Импортировано %d из %d отзывов', $totalSaved, $expectedCount),
+                $totalSaved,
             );
 
             return;
         }
 
-        if ($expectedCount > 0 && $totalSaved > $expectedCount) {
-            $excessIds = Review::query()
-                ->where('organization_id', $organization->id)
-                ->orderBy('id')
-                ->get(['id'])
-                ->slice($expectedCount)
-                ->pluck('id');
-
-            if ($excessIds->isNotEmpty()) {
-                Review::query()->whereIn('id', $excessIds)->delete();
-                $totalSaved = $expectedCount;
-            }
-        }
-
-        $organization->update([
-            'sync_status' => OrganizationSyncStatus::Completed->value,
-            'last_synced_at' => now(),
-            'sync_progress' => array_merge($organization->sync_progress ?? [], [
-                'phase' => 'completed',
-                'saved' => $totalSaved,
-            ]),
-        ]);
-
-        ImportCompleted::dispatch($organization->fresh(), $totalSaved);
+        $this->completeImport($organization, $totalSaved, $expectedCount);
     }
 
     public function failed(?Throwable $exception): void
@@ -220,19 +208,64 @@ class ImportReviewsStreamJob implements ShouldBeUnique, ShouldQueue
         ImportPhaseChanged::dispatch($organization->fresh(), $phase, $message);
     }
 
+    private function completeImport(Organization $organization, int $totalSaved, int $expectedCount): void
+    {
+        if ($expectedCount > 0 && $totalSaved > $expectedCount) {
+            $excessIds = Review::query()
+                ->where('organization_id', $organization->id)
+                ->orderBy('id')
+                ->get(['id'])
+                ->slice($expectedCount)
+                ->pluck('id');
+
+            if ($excessIds->isNotEmpty()) {
+                Review::query()->whereIn('id', $excessIds)->delete();
+                $totalSaved = $expectedCount;
+            }
+        }
+
+        $organization->update([
+            'sync_status' => OrganizationSyncStatus::Completed->value,
+            'last_synced_at' => now(),
+            'sync_progress' => array_merge($organization->sync_progress ?? [], [
+                'phase' => 'completed',
+                'saved' => $totalSaved,
+                'import_run_id' => $this->importRunId,
+            ]),
+        ]);
+
+        try {
+            ImportCompleted::dispatch($organization->fresh(), $totalSaved);
+        } catch (Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('ImportCompleted broadcast skipped', [
+                'organization_id' => $organization->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function minimumSavedCount(int $expectedCount): int
     {
         return max(1, (int) floor($expectedCount * 0.85));
     }
 
-    private function failImport(Organization $organization, string $message): void
+    private function failImport(Organization $organization, string $message, ?int $totalSaved = null): void
     {
         \Illuminate\Support\Facades\Log::error('Import failed', [
             'organization_id' => $organization->id,
             'message' => $message,
         ]);
 
-        $organization->update(['sync_status' => OrganizationSyncStatus::Failed->value]);
+        $totalSaved ??= Review::where('organization_id', $organization->id)->count();
+
+        $organization->update([
+            'sync_status' => OrganizationSyncStatus::Failed->value,
+            'sync_progress' => array_merge($organization->sync_progress ?? [], [
+                'phase' => 'failed',
+                'saved' => $totalSaved,
+                'import_run_id' => $this->importRunId,
+            ]),
+        ]);
 
         try {
             ImportFailed::dispatch($organization->fresh(), $message);

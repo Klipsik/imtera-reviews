@@ -43,7 +43,16 @@ export const useImportStore = defineStore('import', () => {
   }
 
   function syncFromOrganization(org: Organization) {
-    phase.value = org.sync_progress?.phase ?? org.sync_status
+    if (org.sync_status === 'failed') {
+      phase.value = 'failed'
+    }
+    else if (org.sync_status === 'completed') {
+      phase.value = 'completed'
+    }
+    else {
+      phase.value = org.sync_progress?.phase ?? org.sync_status
+    }
+
     totalSaved.value = org.sync_progress?.saved ?? 0
   }
 

@@ -77,6 +77,8 @@ export function useImportChannel(organizationId: number, handlers: ImportChannel
     })
     .listen('.ImportFailed', (payload: { message: string }) => {
       importStore.onFailed(payload)
+      void handlers.onOrganizationReady?.()
+      void reviewsStore.fetchAll(organizationId)
     })
 
   onUnmounted(() => {

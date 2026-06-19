@@ -248,7 +248,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/layouts/AppLayout.vue'
@@ -361,6 +361,7 @@ async function loadReviews() {
 
   if (
     status === 'completed'
+    || status === 'failed'
     || ['pending', 'parsing_org', 'parsing_reviews', 'saving'].includes(status ?? '')
   ) {
     await reviewsStore.fetchAll(orgId.value)
@@ -406,9 +407,43 @@ onMounted(async () => {
 })
 
 watch(() => importStore.phase, async (phase) => {
-  if (phase === 'completed') {
+  if (phase === 'completed' || phase === 'failed') {
     await loadOrganization()
     await loadReviews()
+  }
+})
+
+let importPollTimer: ReturnType<typeof setInterval> | null = null
+
+watch(isImporting, (importing) => {
+  if (importPollTimer) {
+    clearInterval(importPollTimer)
+    importPollTimer = null
+  }
+
+  if (!importing) {
+    return
+  }
+
+  importPollTimer = setInterval(async () => {
+    await loadOrganization()
+
+    const status = organization.value?.sync_status
+
+    if (status === 'completed' || status === 'failed') {
+      if (importPollTimer) {
+        clearInterval(importPollTimer)
+        importPollTimer = null
+      }
+
+      await loadReviews()
+    }
+  }, 5000)
+})
+
+onUnmounted(() => {
+  if (importPollTimer) {
+    clearInterval(importPollTimer)
   }
 })
 </script>
