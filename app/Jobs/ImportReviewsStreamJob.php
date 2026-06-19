@@ -154,6 +154,15 @@ class ImportReviewsStreamJob implements ShouldBeUnique, ShouldQueue
 
         $expectedCount = (int) $organization->reviews_count;
 
+        if ($expectedCount > 0 && $totalSaved < $this->minimumSavedCount($expectedCount)) {
+            $this->failImport(
+                $organization,
+                sprintf('Импортировано %d из %d отзывов', $totalSaved, $expectedCount),
+            );
+
+            return;
+        }
+
         if ($expectedCount > 0 && $totalSaved > $expectedCount) {
             $excessIds = Review::query()
                 ->where('organization_id', $organization->id)
@@ -209,6 +218,11 @@ class ImportReviewsStreamJob implements ShouldBeUnique, ShouldQueue
         ]);
 
         ImportPhaseChanged::dispatch($organization->fresh(), $phase, $message);
+    }
+
+    private function minimumSavedCount(int $expectedCount): int
+    {
+        return max(1, (int) floor($expectedCount * 0.85));
     }
 
     private function failImport(Organization $organization, string $message): void

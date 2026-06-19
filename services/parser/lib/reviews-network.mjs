@@ -213,6 +213,22 @@ export function parseReviewsApiPayload(payload) {
   return { reviews, params };
 }
 
+/**
+ * @param {number|null|undefined} expectedTotal
+ * @param {number|null|undefined} reportedTotal
+ * @returns {number|null}
+ */
+export function resolveReviewTarget(expectedTotal, reportedTotal) {
+  const expected = expectedTotal != null && expectedTotal > 0 ? expectedTotal : null;
+  const reported = reportedTotal != null && reportedTotal > 0 ? reportedTotal : null;
+
+  if (expected != null && reported != null) {
+    return Math.max(expected, reported);
+  }
+
+  return expected ?? reported;
+}
+
 export function createReviewsNetworkCollector() {
   return {
     reviews: [],
@@ -225,11 +241,15 @@ export function createReviewsNetworkCollector() {
       const { reviews, params } = parseReviewsApiPayload(payload);
 
       if (params?.count != null) {
-        this.totalCount = params.count;
+        if (this.totalCount == null || params.count > this.totalCount) {
+          this.totalCount = params.count;
+        }
       }
 
       if (params?.totalPages != null) {
-        this.totalPages = params.totalPages;
+        if (this.totalPages == null || params.totalPages > this.totalPages) {
+          this.totalPages = params.totalPages;
+        }
       }
 
       if (params?.page != null) {
@@ -248,11 +268,15 @@ export function createReviewsNetworkCollector() {
       }
 
       if (extracted.params?.count != null) {
-        this.totalCount = extracted.params.count;
+        if (this.totalCount == null || extracted.params.count > this.totalCount) {
+          this.totalCount = extracted.params.count;
+        }
       }
 
       if (extracted.params?.totalPages != null) {
-        this.totalPages = extracted.params.totalPages;
+        if (this.totalPages == null || extracted.params.totalPages > this.totalPages) {
+          this.totalPages = extracted.params.totalPages;
+        }
       }
 
       if (extracted.params?.page != null) {
@@ -276,13 +300,15 @@ export function createReviewsNetworkCollector() {
       this.reviews.push(mapApiReviewToParserReview(apiReview));
     },
 
-    isComplete() {
-      if (this.totalCount != null) {
-        return this.reviews.length >= this.totalCount;
+    isComplete(expectedTotal = null) {
+      const target = resolveReviewTarget(expectedTotal, this.totalCount);
+
+      if (target != null && this.reviews.length >= target) {
+        return true;
       }
 
       if (this.totalPages != null && this.loadedPages.size >= this.totalPages) {
-        return true;
+        return target == null || this.reviews.length >= target;
       }
 
       return false;

@@ -6,6 +6,7 @@ import {
   isReviewsApiUrl,
   mapApiReviewToParserReview,
   parseReviewsApiPayload,
+  resolveReviewTarget,
 } from './reviews-network.mjs';
 
 const sampleApiReview = {
@@ -192,5 +193,29 @@ describe('createReviewsNetworkCollector', () => {
 
     expect(collector.reviews).toHaveLength(8);
     expect(collector.isComplete()).toBe(true);
+  });
+
+  test('does not complete early when reported count is below expected total', () => {
+    const collector = createReviewsNetworkCollector();
+
+    collector.ingestPayload({
+      data: {
+        reviews: Array.from({ length: 100 }, (_, index) => ({
+          ...sampleApiReview,
+          reviewId: `id-${index}`,
+        })),
+        params: { count: 100, page: 1, totalPages: 2 },
+      },
+    });
+
+    expect(collector.isComplete(632)).toBe(false);
+  });
+});
+
+describe('resolveReviewTarget', () => {
+  test('prefers the larger of expected and reported totals', () => {
+    expect(resolveReviewTarget(632, 100)).toBe(632);
+    expect(resolveReviewTarget(null, 398)).toBe(398);
+    expect(resolveReviewTarget(632, null)).toBe(632);
   });
 });

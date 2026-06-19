@@ -210,6 +210,74 @@ class ImportReviewsStreamJobTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_import_job_marks_failed_when_too_few_reviews_saved(): void
+    {
+        Event::fake([ImportFailed::class, ImportCompleted::class]);
+
+        $user = User::factory()->create();
+
+        $organization = Organization::factory()->create([
+            'user_id' => $user->id,
+            'sync_status' => OrganizationSyncStatus::Pending->value,
+            'reviews_count' => 632,
+        ]);
+
+        $parser = $this->createMock(YandexMapsParserInterface::class);
+
+        $parser->method('parseOrganization')->willReturn([
+            'org_id' => '12345',
+            'name' => 'Test Org',
+            'average_rating' => 4.5,
+            'ratings_count' => 700,
+            'reviews_count' => 632,
+            'address' => 'Test address',
+            'phone' => '+7',
+            'city' => 'Москва',
+            'category' => 'Кафе',
+            'raw_data' => [],
+        ]);
+
+        $parser->method('streamReviews')->willReturn((function () {
+            yield [
+                'type' => 'batch',
+                'reviews' => [
+                    [
+                        'author' => 'Ivan',
+                        'date' => '2024-01-01T10:00:00.000Z',
+                        'text' => 'Only one',
+                        'rating' => 5,
+                    ],
+                ],
+            ];
+            yield ['type' => 'done', 'total' => 100];
+        })());
+
+        $this->app->instance(YandexMapsParserInterface::class, $parser);
+
+        $runId = (string) Str::uuid();
+        $organization->update(['sync_progress' => ['import_run_id' => $runId]]);
+
+        $job = new ImportReviewsStreamJob(
+            $organization->id,
+            'https://yandex.ru/maps/org/test/12345/',
+            'https://yandex.ru/maps/org/test/12345/reviews/',
+            $runId,
+        );
+
+        $job->handle(
+            app(YandexMapsParserInterface::class),
+            app(\App\Services\Organization\OrganizationMetadataService::class),
+            app(\App\Services\Review\ReviewImportService::class),
+            app(\App\Services\Organization\OrganizationImportRunService::class),
+        );
+
+        $organization->refresh();
+
+        $this->assertSame(OrganizationSyncStatus::Failed->value, $organization->sync_status);
+        Event::assertDispatched(ImportFailed::class);
+        Event::assertNotDispatched(ImportCompleted::class);
+    }
+
     public function test_import_job_trims_reviews_above_yandex_reviews_count(): void
     {
         Event::fake([ReviewsAppended::class, ImportCompleted::class]);

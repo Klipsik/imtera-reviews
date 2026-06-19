@@ -681,6 +681,7 @@ async function streamViaNetworkIntercept(page, collector, target, onBatch, onPro
   let stagnantRounds = 0;
   let scrollAttempts = 0;
   const maxAttempts = target ? Math.max(300, target * 2) : 300;
+  const stagnantLimit = target > 200 ? 5 : STAGNANT_ROUNDS_BEFORE_CONFIRM;
 
   const emitProgress = async () => {
     if (onProgress) {
@@ -715,14 +716,14 @@ async function streamViaNetworkIntercept(page, collector, target, onBatch, onPro
       await emitNew();
     }
 
-    if (collector.isComplete() || (target && collector.reviews.length >= target)) {
+    if (collector.isComplete(target) || (target && collector.reviews.length >= target)) {
       await emitNew();
       break;
     }
 
     if (collector.reviews.length === previousCount) {
       stagnantRounds++;
-      if (stagnantRounds >= STAGNANT_ROUNDS_BEFORE_CONFIRM) {
+      if (stagnantRounds >= stagnantLimit) {
         await scrollReviewsContainer(page, { aggressive: true });
         await waitForReviewsLoad(page, 2000);
 
@@ -766,7 +767,7 @@ export async function streamReviewsPage(page, url, { expectedTotal = null, onBat
     collector.ingestHtml(await page.content());
   }
 
-  const target = collector.totalCount ?? expectedTotal ?? 600;
+  const target = expectedTotal ?? collector.totalCount ?? 600;
   const useNetwork = collector.reviews.length > 0;
   const expectedFirstPageCount = Math.min(50, target);
 
@@ -806,7 +807,7 @@ export async function streamReviewsPage(page, url, { expectedTotal = null, onBat
 
   return {
     total: useNetwork ? collector.reviews.length : total,
-    expectedTotal: collector.totalCount ?? expectedTotal ?? null,
+    expectedTotal: expectedTotal ?? collector.totalCount ?? null,
     source: useNetwork ? 'network' : 'dom',
   };
 }
