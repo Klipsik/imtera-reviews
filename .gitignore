@@ -38,6 +38,7 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 *.tar.gz
+deploy.env
 
 **/caddy
 frankenphp

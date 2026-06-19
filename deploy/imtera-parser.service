@@ -4,10 +4,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=www-data
-WorkingDirectory=/var/www/imtera-test.local/services/parser
+User=kp
+WorkingDirectory=/var/www/imtera/services/parser
 Environment=PORT=3001
-ExecStart=/usr/local/bin/bun run start
+ExecStart=/home/kp/.bun/bin/bun run start
 Restart=always
 RestartSec=5
 
