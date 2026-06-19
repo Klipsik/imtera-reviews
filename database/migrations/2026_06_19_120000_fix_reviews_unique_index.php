@@ -9,31 +9,21 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (! Schema::hasTable('reviews')) {
+        if (! Schema::hasTable('reviews') || $this->hasCompositeUnique()) {
             return;
         }
 
-        $hasComposite = collect(DB::select("
-            SELECT indexdef FROM pg_indexes
-            WHERE tablename = 'reviews'
-              AND indexdef LIKE '%(organization_id, yandex_review_id)%'
-        "))->isNotEmpty();
-
-        if ($hasComposite) {
-            return;
+        if (Schema::getConnection()->getDriverName() === 'pgsql') {
+            DB::statement('ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_yandex_review_id_unique');
         }
 
         Schema::table('reviews', function (Blueprint $table) {
             try {
                 $table->dropUnique(['yandex_review_id']);
             } catch (Throwable) {
-                // legacy PostgreSQL constraint name
+                // already migrated or fresh schema
             }
-        });
 
-        DB::statement('ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_yandex_review_id_unique');
-
-        Schema::table('reviews', function (Blueprint $table) {
             $table->unique(['organization_id', 'yandex_review_id']);
         });
     }
@@ -48,5 +38,18 @@ return new class extends Migration
             $table->dropUnique(['organization_id', 'yandex_review_id']);
             $table->unique('yandex_review_id');
         });
+    }
+
+    private function hasCompositeUnique(): bool
+    {
+        foreach (Schema::getIndexes('reviews') as $index) {
+            $columns = $index['columns'] ?? [];
+
+            if (($index['unique'] ?? false) && $columns === ['organization_id', 'yandex_review_id']) {
+                return true;
+            }
+        }
+
+        return false;
     }
 };
