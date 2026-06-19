@@ -41,7 +41,37 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to VPS
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_sqlite
+          coverage: none
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build production assets
+        run: |
+          cp deploy/.env.production.example .env
+          composer install --no-dev --optimize-autoloader --no-interaction
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Rsync to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 194.226.142.147
+          username: kp
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "vendor,public/build"
+          target: /var/www/imtera
+          strip_components: 0
+          overwrite: true
+
+      - name: Deploy on VPS
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: 194.226.142.147
@@ -52,4 +82,4 @@ jobs:
             cd /var/www/imtera
             git fetch origin main
             git reset --hard origin/main
-            bash scripts/deploy-remote.sh
+            SKIP_FRONTEND_BUILD=1 bash scripts/deploy-remote.sh

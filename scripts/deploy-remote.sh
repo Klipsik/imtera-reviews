@@ -8,11 +8,19 @@ cd "$APP_DIR"
 export PATH="/home/kp/.bun/bin:/usr/local/bin:$PATH"
 
 echo "==> Composer"
-composer install --no-dev --optimize-autoloader --no-interaction
+if ! composer install --no-dev --optimize-autoloader --no-interaction 2>/dev/null; then
+  echo "composer on server failed, expecting vendor from CI/rsync" >&2
+  composer dump-autoload --optimize --no-dev --no-scripts -q
+fi
 
 echo "==> Frontend"
-bun install --frozen-lockfile
-bun run build
+if [ "${SKIP_FRONTEND_BUILD:-0}" = "1" ] && [ -f public/build/manifest.json ]; then
+  echo "skip (manifest exists)"
+else
+  bun install --frozen-lockfile
+  # vue-tsc на слабом VPS падает по OOM; типы проверяются в CI
+  bunx vite build
+fi
 
 echo "==> Parser"
 cd services/parser
